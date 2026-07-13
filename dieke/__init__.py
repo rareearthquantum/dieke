@@ -46,7 +46,8 @@ class RareEarthIon:
          self.freeion_mat,
          self.LSJmJstateLabels,
          self.FreeIonMatrix,
-         self.Ckq) = makeMatricies(nf)
+         self.Ckq,
+         self.exchange_operators) = makeMatricies(nf)
         self.N = factorial(14)//(factorial(nf)*factorial(14-nf))
         self.N = int(round(self.N))
         self.nf = nf
@@ -148,6 +149,18 @@ class RareEarthIon:
             C_kq operator
         """
         return self.Ckq[(k, q)]
+        
+    def exchangematrix(self, k, q):
+        """Returns the exchange operator a la Levy
+
+        Args:
+            k (int)
+            q (int) 
+
+        Returns:
+            exchange_kq operator
+        """
+        return self.exchange_operators[(k, q)]
 
     def numlevels(self):
         return len(self.LSJlevelLabels)
@@ -236,9 +249,9 @@ def makeMatricies(nf):
     (LSJlevels, freeion_mat, LSterms, Uk, V) = read_crosswhite(nf)
     (LSJmJstates, full_freeion_mat) = makeFullFreeIonOperators(
                                               nf, LSJlevels, freeion_mat)
-    Ckq = makeCkq(LSJmJstates, LSJlevels, LSterms, Uk, nf)
+    (Ckq,exchange_operators) = makeCkq(LSJmJstates, LSJlevels, LSterms, Uk, nf)
     return (LSterms, Uk, LSJlevels, freeion_mat, LSJmJstates,
-            full_freeion_mat, Ckq)
+            full_freeion_mat, Ckq, exchange_operators)
 
 
 def readLaF3params(nf):
@@ -378,6 +391,7 @@ def makesinglyreducedUk(doublyReducedUk, LSterms, LSJlevels):
         LStermdict[LSterms[k]] = k
     kvals = [2, 4, 6]  # values of k for which we need to worry about
     singlyreducedUk = np.zeros([3, len(LSJlevels), len(LSJlevels)])
+    singlyreducedexchange = np.zeros([3, len(LSJlevels), len(LSJlevels)])
     for i in range(len(LSJlevels)):
         L = LfromLevelLabel(LSJlevels[i])
         S = SfromLevelLabel(LSJlevels[i])
@@ -396,7 +410,14 @@ def makesinglyreducedUk(doublyReducedUk, LSterms, LSJlevels):
                     wigner_6j(J, Jprime, k, Lprime, L, S) * \
                     doublyReducedUk[k_idx, LStermdict[iterm],
                                     LStermdict[jterm]]
-    return singlyreducedUk
+                # Not really sure about off-diagonal terms
+                if doublyReducedUk[k_idx, LStermdict[iterm],
+                                    LStermdict[jterm]] > 0:
+                    singlyreducedexchange[k_idx, i, j] = \
+                        singlyreducedUk[k_idx, i, j]*2*S / \
+                        doublyReducedUk[k_idx, LStermdict[iterm],
+                                        LStermdict[jterm]]
+    return (singlyreducedUk,singlyreducedexchange)
 
 
 # Caching results of these things to make stuff faster
@@ -445,7 +466,7 @@ def makeCkq(LSJmJstates, LSJlevels, LSterms, doublyReducedUk, nf):
     for k in range(len(LSJlevels)):
         leveldict[LSJlevels[k]] = k
     # print("Making singly reduced Uk matricies")
-    singlyreducedUk = makesinglyreducedUk(doublyReducedUk, LSterms, LSJlevels)
+    (singlyreducedUk,singlyreducedexchange) = makesinglyreducedUk(doublyReducedUk, LSterms, LSJlevels)
     multiplet_size = []
     multiplet_start = []
 
@@ -466,6 +487,7 @@ def makeCkq(LSJmJstates, LSJlevels, LSterms, doublyReducedUk, nf):
             count = count+1
         
     Ckq = {}
+    exchange = {}
     for k in [2, 4, 6]:
         lCkl = reducedCk(3, k, 3)
         for q in range(-k, k+1):
@@ -473,6 +495,7 @@ def makeCkq(LSJmJstates, LSJlevels, LSterms, doublyReducedUk, nf):
 #            Ckq[(k, q)]
 #            cmatrix = np.matrix(np.zeros([numstates, numstates],dtype='complex128'))
             cmatrix = emptymatrix(numstates,dtype='complex')
+            exchangematrix = emptymatrix(numstates,dtype='complex')
             for i in range(len(LSJlevels)):
                 istart = multiplet_start[i]
                 isize = multiplet_size[i]
@@ -502,12 +525,17 @@ def makeCkq(LSJmJstates, LSJlevels, LSterms, doublyReducedUk, nf):
                                 cmatrix[istart+ii, jstart+ij] = \
                                     (-1)**(J-mJ)*threejtemp * \
                                     singlyreducedUk[k//2-1, i, j]*lCkl
+                                exchangematrix[istart+ii, jstart+ij] = \
+                                    (-1)**(J-mJ)*threejtemp * \
+                                    singlyreducedexchange[k//2-1, i, j]
             if nf > 7:
                 cmatrix = -cmatrix
+                exchangematrix = -exchangematrix
         
             Ckq[(k, q)] = cmatrix
+            exchange[(k,q)] = exchangematrix
 #            print("ROWCOUNT TEST = %s" %rowcount_test)
-    return Ckq
+    return (Ckq,exchange)
 
 
 # takes free ion operators defined over LSJ levels
