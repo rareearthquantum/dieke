@@ -121,16 +121,16 @@ class RareEarthIon:
                         Sminus1[ii, jj] = sign * wignerlookup.w3j(twiceJ,  2, twiceJp,
                                                                 -twicemJ, -2, twicemJp) * \
                                      reducedS(twiceS, twiceL, twiceJ, twiceSp, twiceLp, twiceJp)
-            self.FreeIonMatrix['L1']=L1
-            self.FreeIonMatrix['L-1']=Lminus1
-            self.FreeIonMatrix['S1']=S1
-            self.FreeIonMatrix['S-1']=Sminus1
-            self.FreeIonMatrix['Lx']=1/np.sqrt(2)*(Lminus1-L1)
-            self.FreeIonMatrix['Ly']=1j/np.sqrt(2)*(Lminus1+L1)
-            self.FreeIonMatrix['Lz']=L0
-            self.FreeIonMatrix['Sx']=1/np.sqrt(2)*(Sminus1-S1)
-            self.FreeIonMatrix['Sy']=1j/np.sqrt(2)*(Sminus1+S1)
-            self.FreeIonMatrix['Sz']=S0
+        self.FreeIonMatrix['L1']=L1
+        self.FreeIonMatrix['L-1']=Lminus1
+        self.FreeIonMatrix['S1']=S1
+        self.FreeIonMatrix['S-1']=Sminus1
+        self.FreeIonMatrix['Lx']=1/np.sqrt(2)*(Lminus1-L1)
+        self.FreeIonMatrix['Ly']=1j/np.sqrt(2)*(Lminus1+L1)
+        self.FreeIonMatrix['Lz']=L0
+        self.FreeIonMatrix['Sx']=1/np.sqrt(2)*(Sminus1-S1)
+        self.FreeIonMatrix['Sy']=1j/np.sqrt(2)*(Sminus1+S1)
+        self.FreeIonMatrix['Sz']=S0
             
             
                         
