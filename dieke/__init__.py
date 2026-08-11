@@ -618,6 +618,69 @@ def makeIxyz(I):
     Iz=I0
     return Ix,Iy,Iz
 
+def makeHhf(ion,I):
+    twiceI = int(round(2*I))
+    NI = twiceI+1
+    twicemIvals = range(-twiceI,twiceI+1,2)
+    eyeHF = np.eye(twiceI+1)
+    eyeNoHF = np.eye(ion.N)
+    twicemIMat = np.kron(eyeNoHF,np.diag(twicemIvals))
+    
+    wignerlookup = WignerDict()
+    
+    # Do some stuff before kronecker product
+    term1 = np.zeros((ion.N,ion.N), dtype=complex)
+    term2 = np.zeros((ion.N,ion.N), dtype=complex)
+    
+    # singlyreducedU2 = makesinglyreducedU2(ion.Uk[0], ion.LStermLabels, ion.LSJlevelLabels)
+    # U2 = makeFullFreeIonOperators(ion.nf, ion.LSJlevelLabels, {'U2':singlyreducedU2})['U2']
+    
+    for ii in range(ion.N):
+        twiceL = int(round(2*ion.FreeIonMatrix['L'][ii, ii]))
+        twiceS = int(round(2*ion.FreeIonMatrix['S'][ii, ii]))
+        twiceJ = int(round(2*ion.FreeIonMatrix['J'][ii, ii]))
+        twicemJ = int(round(2*ion.FreeIonMatrix['mJ'][ii, ii]))
+        # Todo: Could make this twice as fast by only doing one triangle
+        for jj in range(ion.N):
+            twiceLp = int(round(2*ion.FreeIonMatrix['L'][jj, jj]))
+            twiceSp = int(round(2*ion.FreeIonMatrix['S'][jj, jj]))
+            twiceJp = int(round(2*ion.FreeIonMatrix['J'][jj, jj]))
+            twicemJp = int(round(2*ion.FreeIonMatrix['mJ'][jj, jj]))
+            if twiceS == twiceSp:
+                multiplier = np.sqrt((twiceJ+1)*(twiceJp+1)*(twiceI+1)*(twiceI/2.0+1))
+                if twiceL == twiceLp:
+                    term1[ii,jj] = wignerlookup.w6j(twiceL,twiceL,2,twiceJp,twiceJ,twiceS)*np.sqrt((twiceL+1)*(twiceL/2.0+1))*multiplier
+                term2[ii,jj] = wignerlookup.w3j(twiceLp,4,twiceL,0,0,0)*wignerlookup.w9j(twiceS,twiceSp,2,twiceL,twiceLp,4,twiceJ,twiceJp,2)*np.sqrt(30*(twiceL+1)*(twiceLp+1)*(twiceS+1)*(twiceS/2.0+1))*multiplier
+    print("done part 1")
+    
+    term1 = np.kron(term1,eyeHF)
+    term2 = np.kron(term2,eyeHF)
+    
+    Hhf = emptymatrix(ion.N*NI, 'complex')
+    for ii in range(ion.N*NI):
+        reducedii = ii//NI
+        twiceL = int(round(2*ion.FreeIonMatrix['L'][reducedii,reducedii]))
+        twiceJ = int(round(2*ion.FreeIonMatrix['J'][reducedii,reducedii]))
+        twiceS = int(round(2*ion.FreeIonMatrix['S'][reducedii,reducedii]))
+        twicemJ = int(round(2*ion.FreeIonMatrix['mJ'][reducedii,reducedii]))
+        twicemI = twicemIMat[ii,ii]
+        for jj in range(ion.N*NI):
+            reducedjj = jj//NI
+            twiceLp = int(round(2*ion.FreeIonMatrix['L'][reducedjj,reducedjj]))
+            twiceJp = int(round(2*ion.FreeIonMatrix['J'][reducedjj,reducedjj]))
+            twiceSp = int(round(2*ion.FreeIonMatrix['S'][reducedjj,reducedjj]))
+            twicemJp = int(round(2*ion.FreeIonMatrix['mJ'][reducedjj,reducedjj]))
+            twicemIp = twicemIMat[jj,jj]
+            if twiceS == twiceSp:
+                sign1 = -(-1)**((twiceL+twiceS+twicemJ+twiceI+twicemI)/2.0)
+                sign2 = -(-1)**((twiceJ+twicemJ+twiceL+twiceI+twicemI)/2.0)
+                multiplier = 0.0
+                for q in (-1,0,1):
+                    multiplier += (-1)**q*wignerlookup.w3j(twiceJ,2,twiceJp,-twicemJ,2*q,twicemJp)*wignerlookup.w3j(twiceI,2,twiceI,-twicemI,2*q,twicemIp)
+                Hhf[ii,jj] = multiplier*(sign1*term1[ii,jj] + sign2*term2[ii,jj])
+    
+    return Hhf
+
 def read_crosswhite(nf):
     """
     Returns set of matricies from the crosswhite datafiles.
