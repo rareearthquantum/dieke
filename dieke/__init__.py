@@ -418,6 +418,8 @@ class ReducedMagMomDict:
 class WignerDict:
     def __init__(self):
         self.w3jdict = {}
+        self.w6jdict = {}
+        self.w9jdict = {}
 
     def w3j(self, twicej1, twicej2, twicej3, twicem1, twicem2, twicem3):
         wargs = (twicej1, twicej2, twicej3, twicem1, twicem2, twicem3)
@@ -435,6 +437,42 @@ class WignerDict:
             #     import pdb; pdb.set_trace()               
             self.w3jdict[(wargs)] = w3jtemp
             return w3jtemp
+            
+    def w6j(self, twicej1, twicej2, twicej3, twicej4, twicej5, twicej6):
+        wargs = (twicej1, twicej2, twicej3, twicej4, twicej5, twicej6)
+        if wargs in self.w6jdict:
+                return self.w6jdict[wargs]
+        else:
+            w6jtemp = wigner_6j(twicej1/2.0, twicej2/2.0, twicej3/2.0,
+                                twicej4/2.0, twicej5/2.0, twicej6/2.0)              
+            self.w6jdict[(wargs)] = w6jtemp
+            return w6jtemp
+            
+    def tricon_ck(a, b, c):
+        r"""
+        Triangular condition check; returns True if the triangular condition on the
+        three integers or half-integers a, b and c is satisfied.
+        """
+        return(a + b >= c and c >= np.abs(a - b))
+    
+    # Cache 9j symbol and 6j symbols that are used to calculate it
+    def w9j(self, a, b, c, d, e, f, g, h, i):
+        wargs = (a, b, c, d, e, f, g, h, i)
+        if wargs in self.w9jdict:
+                return self.w9jdict[wargs]
+        else:
+            if tricon_ck(a, d, g) and tricon_ck(h, i, g) and tricon_ck(b, e, h) and \
+                tricon_ck(d, e, f) and tricon_ck(c, f, i) and tricon_ck(c, a, b):
+                xmax = min(a + i, h + d, b + f)
+                xmin = max(abs(a - i), abs(h - d), abs(b - f))
+                xlist = np.arange(xmin, xmax + 1,2)
+                w9jtemp = np.sum([((complex(-1)**x) * (x + 1) * self.w6j(a, d, g, h,
+                    i, x) * self.w6j(b, e, h, d, x, f) * self.w6j(c, f, i, x, a, b))
+                    for x in xlist])
+            else:
+                w9jtemp = 0            
+            self.w9jdict[(wargs)] = w9jtemp
+            return w9jtemp
 
 
 # Equation 1.37 from Guokui and Liu
