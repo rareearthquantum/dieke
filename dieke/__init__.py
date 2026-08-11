@@ -591,6 +591,32 @@ def makeFullFreeIonOperators(nf, LSJlevels, fi_mat):
                                 np.eye(isize)*fi_mat[key][i, j]
     return (LSJmJstates, full_fi_mat)
 
+def makeIxyz(I):
+    twiceI = int(round(2*I))
+    NI = twiceI+1
+    twicemIvals = range(-twiceI,twiceI+1,2)
+    I0 = emptymatrix(NI, 'complex')
+    I1 = emptymatrix(NI, 'complex')
+    Iminus1 = emptymatrix(NI, 'complex')
+    wignerlookup = WignerDict()
+    const = dieke.reducedS(twiceI,0,twiceI,twiceI,0,twiceI)
+    for ii in range(NI):
+        twicemI = twicemIvals[ii]
+        for jj in range(NI):
+            twicemIp = twicemIvals[jj]
+            sign = (-1)**((twiceI-twicemI)/2.0)
+            I0[ii, jj] = const*sign * wignerlookup.w3j(twiceI, 2, twiceI,
+                                               -twicemI, 0, twicemIp)
+            I1[ii, jj] = const*sign * wignerlookup.w3j(twiceI, 2, twiceI,
+                                               -twicemI, 2, twicemIp)
+            # Todo probably don't need to calculate I_{-1} could just use
+            # Hermitianess like properties instead.
+            Iminus1[ii, jj] = const*sign * wignerlookup.w3j(twiceI, 2, twiceI,
+                                                     -twicemI,-2, twicemIp)
+    Ix=1/np.sqrt(2)*(Iminus1-I1)
+    Iy=1j/np.sqrt(2)*(Iminus1+I1)
+    Iz=I0
+    return Ix,Iy,Iz
 
 def read_crosswhite(nf):
     """
