@@ -624,7 +624,7 @@ def makeHhf(ion,I):
     twicemIvals = range(-twiceI,twiceI+1,2)
     eyeHF = np.eye(twiceI+1)
     eyeNoHF = np.eye(ion.N)
-    twicemIMat = np.kron(eyeNoHF,np.diag(twicemIvals))
+    # twicemIMat = np.kron(eyeNoHF,np.diag(twicemIvals))
     
     wignerlookup = WignerDict()
     
@@ -663,14 +663,16 @@ def makeHhf(ion,I):
         twiceJ = int(round(2*ion.FreeIonMatrix['J'][reducedii,reducedii]))
         twiceS = int(round(2*ion.FreeIonMatrix['S'][reducedii,reducedii]))
         twicemJ = int(round(2*ion.FreeIonMatrix['mJ'][reducedii,reducedii]))
-        twicemI = twicemIMat[ii,ii]
+        # twicemI = twicemIMat[ii,ii]
+        twicemI = twicemIvals[ii%NI]
         for jj in range(ion.N*NI):
             reducedjj = jj//NI
             twiceLp = int(round(2*ion.FreeIonMatrix['L'][reducedjj,reducedjj]))
             twiceJp = int(round(2*ion.FreeIonMatrix['J'][reducedjj,reducedjj]))
             twiceSp = int(round(2*ion.FreeIonMatrix['S'][reducedjj,reducedjj]))
             twicemJp = int(round(2*ion.FreeIonMatrix['mJ'][reducedjj,reducedjj]))
-            twicemIp = twicemIMat[jj,jj]
+            # twicemIp = twicemIMat[jj,jj]
+            twicemIp = twicemIvals[jj%NI]
             if twiceS == twiceSp:
                 sign1 = -(-1)**((twiceL+twiceS+twicemJ+twiceI+twicemI)/2.0)
                 sign2 = -(-1)**((twiceJ+twicemJ+twiceL+twiceI+twicemI)/2.0)
