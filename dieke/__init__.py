@@ -448,7 +448,7 @@ class WignerDict:
             self.w6jdict[(wargs)] = w6jtemp
             return w6jtemp
             
-    def tricon_ck(a, b, c):
+    def tricon_ck(self, a, b, c):
         r"""
         Triangular condition check; returns True if the triangular condition on the
         three integers or half-integers a, b and c is satisfied.
@@ -461,8 +461,8 @@ class WignerDict:
         if wargs in self.w9jdict:
                 return self.w9jdict[wargs]
         else:
-            if tricon_ck(a, d, g) and tricon_ck(h, i, g) and tricon_ck(b, e, h) and \
-                tricon_ck(d, e, f) and tricon_ck(c, f, i) and tricon_ck(c, a, b):
+            if self.tricon_ck(a, d, g) and self.tricon_ck(h, i, g) and self.tricon_ck(b, e, h) and \
+                self.tricon_ck(d, e, f) and self.tricon_ck(c, f, i) and self.tricon_ck(c, a, b):
                 xmax = min(a + i, h + d, b + f)
                 xmin = max(abs(a - i), abs(h - d), abs(b - f))
                 xlist = np.arange(xmin, xmax + 1,2)
@@ -599,7 +599,7 @@ def makeIxyz(I):
     I1 = emptymatrix(NI, 'complex')
     Iminus1 = emptymatrix(NI, 'complex')
     wignerlookup = WignerDict()
-    const = dieke.reducedS(twiceI,0,twiceI,twiceI,0,twiceI)
+    const = reducedS(twiceI,0,twiceI,twiceI,0,twiceI)
     for ii in range(NI):
         twicemI = twicemIvals[ii]
         for jj in range(NI):
@@ -618,70 +618,160 @@ def makeIxyz(I):
     Iz=I0
     return Ix,Iy,Iz
 
-def makeHhf(ion,I):
+# <TLSJ||Uk||t'L'S'J'>" eq 1.38 from Guokui and Liu
+def makesinglyreducedU2(doublyReducedU2, LSterms, LSJlevels):
+    LStermdict = {}
+    for k in range(len(LSterms)):
+        LStermdict[LSterms[k]] = k
+    k = 2
+    singlyreducedU2 = np.zeros([len(LSJlevels), len(LSJlevels)])
+    for i in range(len(LSJlevels)):
+        L = LfromLevelLabel(LSJlevels[i])
+        S = SfromLevelLabel(LSJlevels[i])
+        J = JfromLevelLabel(LSJlevels[i])
+        iterm = termFromLevelLabel(LSJlevels[i])
+        for j in range(len(LSJlevels)):
+            Lprime = LfromLevelLabel(LSJlevels[j])
+            # Sprime = SfromLevelLabel(LSJlevels[j])
+            Jprime = JfromLevelLabel(LSJlevels[j])
+            jterm = termFromLevelLabel(LSJlevels[j])
+            # Equation1.37 from Guokui and Liu
+            singlyreducedU2[i, j] = \
+                (-1)**(S+Lprime+J+k)*np.sqrt((2*J+1)*(2*Jprime+1)) * \
+                wigner_6j(J, Jprime, k, Lprime, L, S) * \
+                doublyReducedU2[LStermdict[iterm],
+                                LStermdict[jterm]]
+    return singlyreducedU2
+
+# Hhf implements Eq. (6) in McLeod and Reid (1997) doi:10.1016/S0925-8388(96)02541-8
+# It is the same as Eq. (2.33) in Sebastian Horvath's thesis, except there is a delta(L,L') in one term.
+# HQ is found from (6-39--6-41,6-43) of Wybourne and Smentek (2007), with C2 expanded to f^N alpha SLJ
+# Note: Wybourne and Smentek (2007) has differences compared to Wybourne (1965)
+# There is an extra sign (-1)**q, and there is a factor of B/2 instead of B/4.
+# This may just be a different definition
+def makeHyperfine(ion,I):
     twiceI = int(round(2*I))
     NI = twiceI+1
     twicemIvals = range(-twiceI,twiceI+1,2)
-    eyeHF = np.eye(twiceI+1)
-    eyeNoHF = np.eye(ion.N)
+    # eyeHF = np.eye(twiceI+1)
+    # eyeNoHF = np.eye(ion.N)
     # twicemIMat = np.kron(eyeNoHF,np.diag(twicemIvals))
+    
+    LSJlevels = ion.LSJlevelLabels
     
     wignerlookup = WignerDict()
     
-    # Do some stuff before kronecker product
-    term1 = np.zeros((ion.N,ion.N), dtype=complex)
-    term2 = np.zeros((ion.N,ion.N), dtype=complex)
+    term1reduced_LSJ = np.zeros((len(LSJlevels),len(LSJlevels)),dtype=complex)
+    term2reduced_LSJ = np.zeros((len(LSJlevels),len(LSJlevels)),dtype=complex)
     
-    # singlyreducedU2 = makesinglyreducedU2(ion.Uk[0], ion.LStermLabels, ion.LSJlevelLabels)
-    # U2 = makeFullFreeIonOperators(ion.nf, ion.LSJlevelLabels, {'U2':singlyreducedU2})['U2']
+    Hhf = emptymatrix(NI*ion.numstates(), 'complex')
     
-    for ii in range(ion.N):
-        twiceL = int(round(2*ion.FreeIonMatrix['L'][ii, ii]))
-        twiceS = int(round(2*ion.FreeIonMatrix['S'][ii, ii]))
-        twiceJ = int(round(2*ion.FreeIonMatrix['J'][ii, ii]))
-        twicemJ = int(round(2*ion.FreeIonMatrix['mJ'][ii, ii]))
-        # Todo: Could make this twice as fast by only doing one triangle
-        for jj in range(ion.N):
-            twiceLp = int(round(2*ion.FreeIonMatrix['L'][jj, jj]))
-            twiceSp = int(round(2*ion.FreeIonMatrix['S'][jj, jj]))
-            twiceJp = int(round(2*ion.FreeIonMatrix['J'][jj, jj]))
-            twicemJp = int(round(2*ion.FreeIonMatrix['mJ'][jj, jj]))
+    # No quadrupole for spherically symmetric I = 1/2
+    make_quadrupole = (twiceI != 1)
+    
+    if make_quadrupole:
+        HQ = emptymatrix(NI*ion.numstates(), 'complex')
+        lC2l = reducedCk(3, 2, 3)
+        # Convenient place for this C2 sign
+        if ion.nf > 7:
+            lC2l *= -1
+            
+        minusC2_LSJ = -lC2l*makesinglyreducedU2(ion.Uk[0], ion.LStermLabels, ion.LSJlevelLabels)
+    else:
+        HQ = None
+    
+    multiplet_size = []
+    multiplet_start = []
+
+    count = 0
+    
+    for i,lvl in enumerate(LSJlevels):
+        twiceJ = int(round(2*JfromLevelLabel(lvl)))
+        twiceS = int(round(2*SfromLevelLabel(lvl)))
+        twiceL = int(round(2*LfromLevelLabel(lvl)))
+        twicemJvals = range(-twiceJ, twiceJ+1, 2)
+        # the +1 in line above is only to make sure mJ
+        # goes between -J and J inclusive
+        assert(len(twicemJvals) == twiceJ+1)
+        multiplet_start.append(count)
+        multiplet_size.append(twiceJ+1)
+        for twicemJ in twicemJvals:
+            if (twiceJ % 2) == 0:
+                assert(ion.LSJmJstateLabels[count] == '%s %3d  ' % (lvl, twicemJ//2))
+            else:
+                assert(ion.LSJmJstateLabels[count] == '%s %3d/2' % (lvl, twicemJ))
+            count = count+1
+        for j,lvlp in enumerate(LSJlevels):
+            twiceJp = int(round(2*JfromLevelLabel(lvlp)))
+            twiceSp = int(round(2*SfromLevelLabel(lvlp)))
+            twiceLp = int(round(2*LfromLevelLabel(lvlp)))
+            multiplier = np.sqrt((twiceJ+1)*(twiceJp+1)*(twiceI+1)*(twiceI/2.0+1))
+            if twiceL == twiceLp: # delta(L,L'), found in McLeod and Reid (1997), but not Sebastian Horvath's thesis.
+                term1reduced_LSJ[i,j] = wignerlookup.w6j(twiceL,twiceL,2,twiceJp,twiceJ,twiceS)*np.sqrt((twiceL+1)*(twiceL/2.0+1))*multiplier
+            term2reduced_LSJ[i,j] = wignerlookup.w3j(twiceLp,4,twiceL,0,0,0)*wignerlookup.w9j(twiceS,twiceSp,2,twiceL,twiceLp,4,twiceJ,twiceJp,2)*np.sqrt(30*(twiceL+1)*(twiceLp+1)*(twiceS+1)*(twiceS/2.0+1))*multiplier
+    
+    for i in range(len(LSJlevels)):
+        istart = multiplet_start[i]
+        isize = multiplet_size[i]
+        # istop = istart+isize # commented this out because never used?
+#                rowcount_test = rowcount_test + isize
+        for j in range(len(LSJlevels)):
+            # if abs(singlyreducedUk[k//2-1, i, j]) < 1e-10:
+                # continue
+            jstart = multiplet_start[j]
+            jsize = multiplet_size[j]
+            # jstop = jstart+jsize #commented out because never used?
+            twiceJ = isize-1
+            J = twiceJ/2.0
+            twiceJp = jsize-1
+            twiceS = int(round(2*SfromLevelLabel(LSJlevels[i])))
+            twiceSp = int(round(2*SfromLevelLabel(LSJlevels[j])))
+            twiceL = int(round(2*LfromLevelLabel(LSJlevels[i])))
             if twiceS == twiceSp:
-                multiplier = np.sqrt((twiceJ+1)*(twiceJp+1)*(twiceI+1)*(twiceI/2.0+1))
-                if twiceL == twiceLp:
-                    term1[ii,jj] = wignerlookup.w6j(twiceL,twiceL,2,twiceJp,twiceJ,twiceS)*np.sqrt((twiceL+1)*(twiceL/2.0+1))*multiplier
-                term2[ii,jj] = wignerlookup.w3j(twiceLp,4,twiceL,0,0,0)*wignerlookup.w9j(twiceS,twiceSp,2,twiceL,twiceLp,4,twiceJ,twiceJp,2)*np.sqrt(30*(twiceL+1)*(twiceLp+1)*(twiceS+1)*(twiceS/2.0+1))*multiplier
-    print("done part 1")
+                for ii in range(isize):  # ii = inner i
+                    twicemJ = -twiceJ+2*ii
+                    mJ = -J + ii
+                    for ij in range(jsize):
+                        twicemJp = -twiceJp + 2*ij
+                        for qi in range(NI):
+                            twicemI = twicemIvals[qi]
+                            for qj in range(NI):
+                                twicemIp = twicemIvals[qj]
+                                sign1 = -(-1)**((twiceL+twiceS+twicemJ+twiceI+twicemI)/2.0)
+                                sign2 = -(-1)**((twiceJ+twicemJ+twiceL+twiceI+twicemI)/2.0)
+                                multiplier = 0.0
+                                for q in (-1,0,1):
+                                    multiplier += (-1)**q*wignerlookup.w3j(twiceJ,2,twiceJp,-twicemJ,2*q,twicemJp)*wignerlookup.w3j(twiceI,2,twiceI,-twicemI,2*q,twicemIp)
+                                Hhf_term = multiplier*(sign1*term1reduced_LSJ[i,j] + sign2*term2reduced_LSJ[i,j])
+                                if Hhf_term > 1e-10:
+                                    Hhf[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = Hhf_term
+            #Only consider diagonal in J (not sure how to do off diagonal at the moment). If J=1/2, spherically symmetric, so no quadrupole
+            if make_quadrupole and (twiceJ == twiceJp) and twiceJ > 1: 
+                for ii in range(isize):  # ii = inner i
+                    twicemJ = -twiceJ+2*ii
+                    mJ = -J + ii
+                    for ij in range(jsize):
+                        twicemJp = -twiceJp + 2*ij
+                        for qi in range(NI):
+                            twicemI = twicemIvals[qi]
+                            mI = twicemI/2.0
+                            for qj in range(NI):
+                                twicemIp = twicemIvals[qj]
+                                q = (twicemJp - twicemJ)//2
+                                if abs(q) > 2:
+                                    continue
+                                # Terms should be diagonal in MF = MJ+MI
+                                if (twicemI - twicemIp)//2 != q:
+                                    continue
+                                if minusC2_LSJ[i,j] < 1e-10:
+                                    continue
+                                HQsign = (-1)**(J-mJ-q+I-mI)
+                                multiplier = np.sqrt((2*I+1)*(I+1)*(2*I+3)/(I*(2*I-1)))*minusC2_LSJ[i,j]/2.0
+                                HQ[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = HQsign*multiplier*wignerlookup.w3j(twiceJ,2*2,twiceJ,-twicemJ,-2*q,twicemJp+2*q)*wignerlookup.w3j(twiceI,2*2,twiceI,-twicemI,2*q,twicemI-2*q)
     
-    term1 = np.kron(term1,eyeHF)
-    term2 = np.kron(term2,eyeHF)
     
-    Hhf = emptymatrix(ion.N*NI, 'complex')
-    for ii in range(ion.N*NI):
-        reducedii = ii//NI
-        twiceL = int(round(2*ion.FreeIonMatrix['L'][reducedii,reducedii]))
-        twiceJ = int(round(2*ion.FreeIonMatrix['J'][reducedii,reducedii]))
-        twiceS = int(round(2*ion.FreeIonMatrix['S'][reducedii,reducedii]))
-        twicemJ = int(round(2*ion.FreeIonMatrix['mJ'][reducedii,reducedii]))
-        # twicemI = twicemIMat[ii,ii]
-        twicemI = twicemIvals[ii%NI]
-        for jj in range(ion.N*NI):
-            reducedjj = jj//NI
-            twiceLp = int(round(2*ion.FreeIonMatrix['L'][reducedjj,reducedjj]))
-            twiceJp = int(round(2*ion.FreeIonMatrix['J'][reducedjj,reducedjj]))
-            twiceSp = int(round(2*ion.FreeIonMatrix['S'][reducedjj,reducedjj]))
-            twicemJp = int(round(2*ion.FreeIonMatrix['mJ'][reducedjj,reducedjj]))
-            # twicemIp = twicemIMat[jj,jj]
-            twicemIp = twicemIvals[jj%NI]
-            if twiceS == twiceSp:
-                sign1 = -(-1)**((twiceL+twiceS+twicemJ+twiceI+twicemI)/2.0)
-                sign2 = -(-1)**((twiceJ+twicemJ+twiceL+twiceI+twicemI)/2.0)
-                multiplier = 0.0
-                for q in (-1,0,1):
-                    multiplier += (-1)**q*wignerlookup.w3j(twiceJ,2,twiceJp,-twicemJ,2*q,twicemJp)*wignerlookup.w3j(twiceI,2,twiceI,-twicemI,2*q,twicemIp)
-                Hhf[ii,jj] = multiplier*(sign1*term1[ii,jj] + sign2*term2[ii,jj])
+    return Hhf,HQ
     
-    return Hhf
 
 def read_crosswhite(nf):
     """
