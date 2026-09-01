@@ -596,28 +596,11 @@ def makeFullFreeIonOperators(nf, LSJlevels, fi_mat):
 def makeIxyz(I):
     twiceI = int(round(2*I))
     NI = twiceI+1
-    twicemIvals = range(-twiceI,twiceI+1,2)
-    I0 = emptymatrix(NI, 'complex')
-    I1 = emptymatrix(NI, 'complex')
-    Iminus1 = emptymatrix(NI, 'complex')
-    wignerlookup = WignerDict()
-    const = reducedS(twiceI,0,twiceI,twiceI,0,twiceI)
-    for ii in range(NI):
-        twicemI = twicemIvals[ii]
-        for jj in range(NI):
-            twicemIp = twicemIvals[jj]
-            sign = (-1)**((twiceI-twicemI)/2.0)
-            I0[ii, jj] = const*sign * wignerlookup.w3j(twiceI, 2, twiceI,
-                                               -twicemI, 0, twicemIp)
-            I1[ii, jj] = const*sign * wignerlookup.w3j(twiceI, 2, twiceI,
-                                               -twicemI, 2, twicemIp)
-            # Todo probably don't need to calculate I_{-1} could just use
-            # Hermitianess like properties instead.
-            Iminus1[ii, jj] = const*sign * wignerlookup.w3j(twiceI, 2, twiceI,
-                                                     -twicemI,-2, twicemIp)
-    Ix=1/np.sqrt(2)*(Iminus1-I1)
-    Iy=1j/np.sqrt(2)*(Iminus1+I1)
-    Iz=I0
+    twicemIvals = np.arange(-twiceI,twiceI+1,2)
+    Iz = scipy.sparse.diags(twicemIvals/2.0,dtype='complex',format='lil') # Todo: change to scipy.sparse.diags_array
+    Ioffdiagvals = np.array([np.sqrt((I-mI)*(I+mI+1))/2 for mI in twicemIvals[:-1]/2])
+    Ix = scipy.sparse.diags([Ioffdiagvals,Ioffdiagvals],[-1,1],dtype='complex',format='lil')
+    Iy = scipy.sparse.diags([-1j*Ioffdiagvals,+1j*Ioffdiagvals],[-1,1],dtype='complex',format='lil')
     return Ix,Iy,Iz
 
 # <TLSJ||Uk||t'L'S'J'>" eq 1.38 from Guokui and Liu
