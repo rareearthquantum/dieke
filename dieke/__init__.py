@@ -9,7 +9,7 @@ from fractions import Fraction
 from .sljcalc import reducedL, reducedS, istriad
 import pandas
 import os
-from scipy.sparse import lil_matrix
+import scipy.sparse
 
 
 np.seterr(all='raise')
@@ -22,9 +22,11 @@ __version__ = '0.4.1'
 
 
 def emptymatrix(n, dtype='double'):
-    return lil_matrix((n, n), dtype=dtype)
+    return scipy.sparse.lil_matrix((n, n), dtype=dtype) # Todo: Change to lil_array
 #    return np.mat(np.zeros((n,n)))
 
+def identitymatrix(n, dtype='double'):
+    return scipy.sparse.identity(n, dtype=dtype, format='lil') # Todo: Change to scipy.sparse.eye_array
 
  
 class RareEarthIon:
@@ -653,8 +655,6 @@ def makeHyperfine(ion,I):
     twiceI = int(round(2*I))
     NI = twiceI+1
     twicemIvals = range(-twiceI,twiceI+1,2)
-    # eyeHF = np.eye(twiceI+1)
-    # eyeNoHF = np.eye(ion.N)
     # twicemIMat = np.kron(eyeNoHF,np.diag(twicemIvals))
     
     LSJlevels = ion.LSJlevelLabels
@@ -727,7 +727,7 @@ def makeHyperfine(ion,I):
             twiceS = int(round(2*SfromLevelLabel(LSJlevels[i])))
             twiceSp = int(round(2*SfromLevelLabel(LSJlevels[j])))
             twiceL = int(round(2*LfromLevelLabel(LSJlevels[i])))
-            if twiceS == twiceSp:
+            if (twiceS == twiceSp) and ( (abs(term1reduced_LSJ[i,j]) > 1e-10) or (abs(term1reduced_LSJ[i,j]) > 1e-10) ):
                 for ii in range(isize):  # ii = inner i
                     twicemJ = -twiceJ+2*ii
                     mJ = -J + ii
@@ -746,7 +746,7 @@ def makeHyperfine(ion,I):
                                 if Hhf_term > 1e-10:
                                     Hhf[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = Hhf_term
             #Only consider diagonal in J (not sure how to do off diagonal at the moment). If J=1/2, spherically symmetric, so no quadrupole
-            if make_quadrupole and (twiceJ == twiceJp) and twiceJ > 1: 
+            if make_quadrupole and (twiceJ == twiceJp) and (twiceJ > 1) and (abs(minusC2_LSJ[i,j]) > 1e-10):
                 for ii in range(isize):  # ii = inner i
                     twicemJ = -twiceJ+2*ii
                     mJ = -J + ii
@@ -763,8 +763,6 @@ def makeHyperfine(ion,I):
                                 # Terms should be diagonal in MF = MJ+MI
                                 if (twicemI - twicemIp)//2 != q:
                                     continue
-                                if minusC2_LSJ[i,j] < 1e-10:
-                                    continue
                                 HQsign = (-1)**(J-mJ-q+I-mI)
                                 multiplier = np.sqrt((2*I+1)*(I+1)*(2*I+3)/(I*(2*I-1)))*minusC2_LSJ[i,j]/2.0
                                 HQ[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = HQsign*multiplier*wignerlookup.w3j(twiceJ,2*2,twiceJ,-twicemJ,-2*q,twicemJp+2*q)*wignerlookup.w3j(twiceI,2*2,twiceI,-twicemI,2*q,twicemI-2*q)
@@ -772,6 +770,17 @@ def makeHyperfine(ion,I):
     
     return Hhf,HQ
     
+# Expand matrix in MI basis to alpha LSJ mJ mI basis
+def expand_I_to_full(Imatrix,N):
+    eyenoHF = identitymatrix(N,dtype='double')
+    return scipy.sparse.kron(eyenoHF,Imatrix)
+
+# Expand matrix in alpha LSJ mJ basis to alpha LSJ mJ mI basis
+def expand_to_hyperfine(matrix,I):
+    twiceI = int(round(2*I))
+    NI = twiceI+1
+    eyeHF = identitymatrix(NI,dtype='double')
+    return scipy.sparse.kron(matrix,eyeHF)
 
 def read_crosswhite(nf):
     """
