@@ -75,10 +75,10 @@ for k in [2, 4, 6]:
                 H = H + Bkq*Ckq + Bkmq*Ckmq
 
 
-(evals, evects) = np.linalg.eig(H)
-E0 = np.min(evals)
-calc_nrg_levels = np.sort(evals-E0)
-calc_nrg_levels = calc_nrg_levels[::2]  # ignore every second element   
+(evals, evects) = np.linalg.eigh(H)
+# E0 = np.min(evals)
+# calc_nrg_levels = np.sort(evals-E0)
+calc_nrg_levels = evals[::2] -evals[0]  # ignore every second element   
 
 #energy levels from Sebastians paper 
 seb_levels = [15, 47, 75, 130, 199, 388, 462, 508,
@@ -92,6 +92,39 @@ seb_levels = seb_levels-E0seb
 print('\n    Jevon  Sebastian Difference')
 for k in range(len(seb_levels)):
     print("%9.1f %9.1f %6.1f"%(
-        np.real(calc_nrg_levels[k]),
+        calc_nrg_levels[k],
         seb_levels[k],
-        np.real(calc_nrg_levels[k]) - seb_levels[k]))
+        calc_nrg_levels[k] - seb_levels[k]))
+
+
+I = 7/2
+
+# Projection operator for 4I15/2 and 4I13/2, in alpha SLJ mJ basis
+proj = evects[:,:30]
+
+# Projection operator for 4I15/2 and 4I13/2, in alpha SLJ mJ mI basis
+proj_hf = dieke.expand_to_hyperfine(proj,I)
+
+# Non hyperfine hamiltonian, projected to 4I15/2 and 4I13/2, expanded to hyperfine states
+Hproj = np.conjugate(np.transpose(proj)) @ H @ proj
+Hproj = dieke.expand_to_hyperfine(Hproj,I)
+
+# Hyperfine hamiltonians, projected to 4I15/2 and 4I13/2
+Hhf,HQ,tests = dieke.makeHyperfine(Er,I,testing=True)
+Hhfproj = np.conjugate(np.transpose(proj_hf)) @ Hhf @ proj_hf
+HQproj = np.conjugate(np.transpose(proj_hf)) @ HQ @ proj_hf
+
+Hproj += cfparams['A']*Hhfproj + cfparams['Q']*HQproj
+
+(evalshf, evectshf) = np.linalg.eigh(Hproj)
+
+seb_Z1_levels = np.array([0.0,0.0,0.8736,0.8737,1.6942,1.7037,2.3355,2.6710,3.1102,3.5052,4.0424,4.0482,4.7107,4.7107,5.3482,5.3482])
+GHz_per_inv_cm = 29.9792458
+calc_Z1_levels = GHz_per_inv_cm*(evalshf[:16]-evalshf[0])
+
+print('\n    Z1 hyperfine (GHz)\n   dieke   Sebastian Difference')
+for k in range(len(seb_Z1_levels)):
+    print("%9.4f %9.4f    %6.4f"%(
+        calc_Z1_levels[k],
+        seb_Z1_levels[k],
+        calc_Z1_levels[k] - seb_Z1_levels[k]))

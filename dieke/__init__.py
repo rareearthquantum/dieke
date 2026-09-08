@@ -26,7 +26,7 @@ def emptymatrix(n, dtype='double'):
 #    return np.mat(np.zeros((n,n)))
 
 def identitymatrix(n, dtype='double'):
-    return scipy.sparse.identity(n, dtype=dtype, format='lil') # Todo: Change to scipy.sparse.eye_array
+    return scipy.sparse.identity(n, dtype=dtype) # Todo: Change to scipy.sparse.eye_array
 
  
 class RareEarthIon:
@@ -44,6 +44,7 @@ class RareEarthIon:
     def __init__(self, nf):
         (self.LStermLabels,
          self.Uk,
+         self.V,
          self.LSJlevelLabels,
          self.freeion_mat,
          self.LSJmJstateLabels,
@@ -239,7 +240,7 @@ def makeMatricies(nf):
     (LSJmJstates, full_freeion_mat) = makeFullFreeIonOperators(
                                               nf, LSJlevels, freeion_mat)
     Ckq = makeCkq(LSJmJstates, LSJlevels, LSterms, Uk, nf)
-    return (LSterms, Uk, LSJlevels, freeion_mat, LSJmJstates,
+    return (LSterms, Uk, V, LSJlevels, freeion_mat, LSJmJstates,
             full_freeion_mat, Ckq)
 
 
@@ -603,38 +604,47 @@ def makeIxyz(I):
     Iy = scipy.sparse.diags([-1j*Ioffdiagvals,+1j*Ioffdiagvals],[-1,1],dtype='complex',format='lil')
     return Ix,Iy,Iz
 
-# <TLSJ||Uk||t'L'S'J'>" eq 1.38 from Guokui and Liu
-def makesinglyreducedU2(doublyReducedU2, LSterms, LSJlevels):
-    LStermdict = {}
-    for k in range(len(LSterms)):
-        LStermdict[LSterms[k]] = k
-    k = 2
-    singlyreducedU2 = np.zeros([len(LSJlevels), len(LSJlevels)])
-    for i in range(len(LSJlevels)):
-        L = LfromLevelLabel(LSJlevels[i])
-        S = SfromLevelLabel(LSJlevels[i])
-        J = JfromLevelLabel(LSJlevels[i])
-        iterm = termFromLevelLabel(LSJlevels[i])
-        for j in range(len(LSJlevels)):
-            Lprime = LfromLevelLabel(LSJlevels[j])
-            # Sprime = SfromLevelLabel(LSJlevels[j])
-            Jprime = JfromLevelLabel(LSJlevels[j])
-            jterm = termFromLevelLabel(LSJlevels[j])
-            # Equation1.37 from Guokui and Liu
-            singlyreducedU2[i, j] = \
-                (-1)**(S+Lprime+J+k)*np.sqrt((2*J+1)*(2*Jprime+1)) * \
-                wigner_6j(J, Jprime, k, Lprime, L, S) * \
-                doublyReducedU2[LStermdict[iterm],
-                                LStermdict[jterm]]
-    return singlyreducedU2
 
-# Hhf implements Eq. (6) in McLeod and Reid (1997) doi:10.1016/S0925-8388(96)02541-8
-# It is the same as Eq. (2.33) in Sebastian Horvath's thesis, except there is a delta(L,L') in one term.
-# HQ is found from (6-39--6-41,6-43) of Wybourne and Smentek (2007), with C2 expanded to f^N alpha SLJ
-# Note: Wybourne and Smentek (2007) has differences compared to Wybourne (1965)
-# There is an extra sign (-1)**q, and there is a factor of B/2 instead of B/4.
-# This may just be a different definition
-def makeHyperfine(ion,I):
+
+# Hhf is hyperfine magnetic dipole, HQ is hyperfine electric quadrupole
+# Matrix elements from https://journals.aps.org/prb/pdf/10.1103/PhysRevB.71.174409
+def makeHyperfine(ion,I,testing=False):
+    
+    # <TLSJ||Uk||t'L'S'J'>" eq 1.38 from Guokui and Liu
+    def makesinglyreducedU2andV12(doublyReducedU2, doublyReducedV12, LSterms, LSJlevels, wignerlookup):
+        LStermdict = {}
+        for k in range(len(LSterms)):
+            LStermdict[LSterms[k]] = k
+        k = 2
+        singlyreducedU2 = np.zeros([len(LSJlevels), len(LSJlevels)])
+        singlyreducedV12 = np.zeros([len(LSJlevels), len(LSJlevels)],dtype=complex)
+        for i in range(len(LSJlevels)):
+            twiceL = int(round(2*LfromLevelLabel(LSJlevels[i])))
+            twiceS = int(round(2*SfromLevelLabel(LSJlevels[i])))
+            twiceJ = int(round(2*JfromLevelLabel(LSJlevels[i])))
+            cwidx = CrosswhiteIndexfromStateLabel(LSJlevels[i])
+            iterm = termFromLevelLabel(LSJlevels[i])
+            for j in range(len(LSJlevels)):
+                twiceLprime = int(round(2*LfromLevelLabel(LSJlevels[j])))
+                twiceSprime = int(round(2*SfromLevelLabel(LSJlevels[j])))
+                twiceJprime = int(round(2*JfromLevelLabel(LSJlevels[j])))
+                cwidxprime = CrosswhiteIndexfromStateLabel(LSJlevels[j])
+                jterm = termFromLevelLabel(LSJlevels[j])
+                # Equation1.37 from Guokui and Liu
+                if twiceSprime == twiceS: #Todo: add this to Uk function
+                    singlyreducedU2[i, j] = \
+                        (-1)**((twiceS+twiceLprime+twiceJ)/2.0+k)*np.sqrt((twiceJ+1)*(twiceJprime+1)) * \
+                        wignerlookup.w6j(twiceJ, twiceJprime, 2*k, twiceLprime, twiceL, twiceS) * \
+                        doublyReducedU2[LStermdict[iterm],
+                                        LStermdict[jterm]]
+                # Not really a good name. It's probably missing something, but its fine as part of a formula
+                singlyreducedV12[i, j] = \
+                    np.sqrt((twiceJ+1)*(twiceJprime+1)) * \
+                    wignerlookup.w9j(twiceS,twiceSprime,2,twiceL,twiceLprime,4,twiceJ,twiceJprime,2) * \
+                    doublyReducedV12[LStermdict[iterm],
+                                    LStermdict[jterm]]
+        return singlyreducedU2, singlyreducedV12
+        
     twiceI = int(round(2*I))
     NI = twiceI+1
     twicemIvals = range(-twiceI,twiceI+1,2)
@@ -644,22 +654,24 @@ def makeHyperfine(ion,I):
     
     wignerlookup = WignerDict()
     
-    term1reduced_LSJ = np.zeros((len(LSJlevels),len(LSJlevels)),dtype=complex)
-    term2reduced_LSJ = np.zeros((len(LSJlevels),len(LSJlevels)),dtype=complex)
+    term1_LSJ = np.zeros((len(LSJlevels),len(LSJlevels)),dtype=complex)
+    term2_LSJ = np.zeros((len(LSJlevels),len(LSJlevels)),dtype=complex)
     
-    Hhf = emptymatrix(NI*ion.numstates(), 'complex')
+    Hhf_term1 = emptymatrix(NI*ion.numstates(), 'complex')
+    Hhf_term2  = emptymatrix(NI*ion.numstates(), 'complex')
     
     # No quadrupole for spherically symmetric I = 1/2
     make_quadrupole = (twiceI != 1)
     
+    minusC2_LSJ,V12_LSJ = makesinglyreducedU2andV12(ion.Uk[0], ion.V[0], ion.LStermLabels, ion.LSJlevelLabels, wignerlookup)
+    lC2l = reducedCk(3, 2, 3)
+    minusC2_LSJ *= -lC2l
+    if ion.nf > 7:
+        minusC2_LSJ *= -1 #U2 sign going from f to 14-f. (-1)^(rank+1), hence V12 doesn't get a sign
+    
+    
     if make_quadrupole:
         HQ = emptymatrix(NI*ion.numstates(), 'complex')
-        lC2l = reducedCk(3, 2, 3)
-        # Convenient place for this C2 sign
-        if ion.nf > 7:
-            lC2l *= -1
-            
-        minusC2_LSJ = -lC2l*makesinglyreducedU2(ion.Uk[0], ion.LStermLabels, ion.LSJlevelLabels)
     else:
         HQ = None
     
@@ -672,6 +684,7 @@ def makeHyperfine(ion,I):
         twiceJ = int(round(2*JfromLevelLabel(lvl)))
         twiceS = int(round(2*SfromLevelLabel(lvl)))
         twiceL = int(round(2*LfromLevelLabel(lvl)))
+        cwidx = CrosswhiteIndexfromStateLabel(lvl)
         twicemJvals = range(-twiceJ, twiceJ+1, 2)
         # the +1 in line above is only to make sure mJ
         # goes between -J and J inclusive
@@ -688,10 +701,14 @@ def makeHyperfine(ion,I):
             twiceJp = int(round(2*JfromLevelLabel(lvlp)))
             twiceSp = int(round(2*SfromLevelLabel(lvlp)))
             twiceLp = int(round(2*LfromLevelLabel(lvlp)))
-            multiplier = np.sqrt((twiceJ+1)*(twiceJp+1)*(twiceI+1)*(twiceI/2.0+1))
-            if twiceL == twiceLp: # delta(L,L'), found in McLeod and Reid (1997), but not Sebastian Horvath's thesis.
-                term1reduced_LSJ[i,j] = wignerlookup.w6j(twiceL,twiceL,2,twiceJp,twiceJ,twiceS)*np.sqrt((twiceL+1)*(twiceL/2.0+1))*multiplier
-            term2reduced_LSJ[i,j] = wignerlookup.w3j(twiceLp,4,twiceL,0,0,0)*wignerlookup.w9j(twiceS,twiceSp,2,twiceL,twiceLp,4,twiceJ,twiceJp,2)*np.sqrt(30*(twiceL+1)*(twiceLp+1)*(twiceS+1)*(twiceS/2.0+1))*multiplier
+            cwidxp = CrosswhiteIndexfromStateLabel(lvlp)
+            multiplier = np.sqrt((twiceI+1)*(twiceI/2.0+1)*twiceI/2.0)
+            # This term is jsut L.I, hence deltas
+            if (twiceS == twiceSp) and (cwidx == cwidxp) and (twiceL == twiceLp):
+                # note sign change to make consistent with L calculations done elsewhere
+                # (-1)**((twiceL+twiceS+twiceJp)/2.0+1) -> (-1)**((twiceLp+twiceSp+twiceJ)/2.0+1)
+                term1_LSJ[i,j] = (-1)**((twiceLp+twiceSp+twiceJ)/2.0+1)*wignerlookup.w6j(twiceJ,2,twiceJp,twiceL,twiceS,twiceL)*np.sqrt(twiceL/2.0*(twiceL+1)*(twiceL/2.0+1))*multiplier*np.sqrt((twiceJ+1)*(twiceJp+1))
+            term2_LSJ[i,j] = -np.sqrt(3)*lC2l*V12_LSJ[i,j]*multiplier # sqrt(10) ???
     
     for i in range(len(LSJlevels)):
         istart = multiplet_start[i]
@@ -710,7 +727,7 @@ def makeHyperfine(ion,I):
             twiceS = int(round(2*SfromLevelLabel(LSJlevels[i])))
             twiceSp = int(round(2*SfromLevelLabel(LSJlevels[j])))
             twiceL = int(round(2*LfromLevelLabel(LSJlevels[i])))
-            if (twiceS == twiceSp) and ( (abs(term1reduced_LSJ[i,j]) > 1e-10) or (abs(term1reduced_LSJ[i,j]) > 1e-10) ):
+            if ( (abs(term1_LSJ[i,j]) > 1e-10) or (abs(term2_LSJ[i,j]) > 1e-10) ): 
                 for ii in range(isize):  # ii = inner i
                     twicemJ = -twiceJ+2*ii
                     mJ = -J + ii
@@ -720,16 +737,15 @@ def makeHyperfine(ion,I):
                             twicemI = twicemIvals[qi]
                             for qj in range(NI):
                                 twicemIp = twicemIvals[qj]
-                                sign1 = -(-1)**((twiceL+twiceS+twicemJ+twiceI+twicemI)/2.0)
-                                sign2 = -(-1)**((twiceJ+twicemJ+twiceL+twiceI+twicemI)/2.0)
                                 multiplier = 0.0
                                 for q in (-1,0,1):
-                                    multiplier += (-1)**q*wignerlookup.w3j(twiceJ,2,twiceJp,-twicemJ,2*q,twicemJp)*wignerlookup.w3j(twiceI,2,twiceI,-twicemI,2*q,twicemIp)
-                                Hhf_term = multiplier*(sign1*term1reduced_LSJ[i,j] + sign2*term2reduced_LSJ[i,j])
-                                if Hhf_term > 1e-10:
-                                    Hhf[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = Hhf_term
-            #Only consider diagonal in J (not sure how to do off diagonal at the moment). If J=1/2, spherically symmetric, so no quadrupole
-            if make_quadrupole and (twiceJ == twiceJp) and (twiceJ > 1) and (abs(minusC2_LSJ[i,j]) > 1e-10):
+                                    multiplier += (-1)**((twiceJ-twicemJ+twiceI-twicemI)/2.0+q)*wignerlookup.w3j(twiceJ,2,twiceJp,-twicemJ,2*q,twicemJp)*wignerlookup.w3j(twiceI,2,twiceI,-twicemI,-2*q,twicemIp)
+                                # Hhf_term = multiplier*(term1_LSJ[i,j] + term2_LSJ[i,j])
+                                if (term1_LSJ[i,j] > 1e-10) or (term2_LSJ[i,j] > 1e-10):
+                                    Hhf_term1[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = multiplier*term1_LSJ[i,j]
+                                    Hhf_term2[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = multiplier*term2_LSJ[i,j]
+            # If J=1/2, spherically symmetric, so no quadrupole
+            if make_quadrupole and (twiceJ > 1) and (abs(minusC2_LSJ[i,j]) > 1e-10):
                 for ii in range(isize):  # ii = inner i
                     twicemJ = -twiceJ+2*ii
                     mJ = -J + ii
@@ -740,30 +756,85 @@ def makeHyperfine(ion,I):
                             mI = twicemI/2.0
                             for qj in range(NI):
                                 twicemIp = twicemIvals[qj]
-                                q = (twicemJp - twicemJ)//2
-                                if abs(q) > 2:
-                                    continue
-                                # Terms should be diagonal in MF = MJ+MI
-                                if (twicemI - twicemIp)//2 != q:
-                                    continue
-                                HQsign = (-1)**(J-mJ-q+I-mI)
-                                multiplier = np.sqrt((2*I+1)*(I+1)*(2*I+3)/(I*(2*I-1)))*minusC2_LSJ[i,j]/2.0
-                                HQ[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = HQsign*multiplier*wignerlookup.w3j(twiceJ,2*2,twiceJ,-twicemJ,-2*q,twicemJp+2*q)*wignerlookup.w3j(twiceI,2*2,twiceI,-twicemI,2*q,twicemI-2*q)
+                                # q = (twicemJp - twicemJ)//2
+                                # if abs(q) > 2:
+                                    # continue
+                                # # Terms should be diagonal in MF = MJ+MI
+                                # if (twicemI - twicemIp)//2 != q:
+                                    # continue
+                                # I think there should be an extra minus sign here from the (-e^2) factor at the beginning, but it matches Sebastian's Er:YSO without
+                                HQsign = (-1)**(J-mJ+I-mI)
+                                multiplier = 0.0
+                                for q in range(-2,3):
+                                    multiplier += (-1)**q*wignerlookup.w3j(twiceJ,2*2,twiceJp,-twicemJ,-2*q,twicemJp)*wignerlookup.w3j(twiceI,2*2,twiceI,-twicemI,2*q,twicemIp)
+                                multiplier /= np.sqrt(I*(2*I-1)/((I+1)*(2*I+1)*(2*I+3)))
+                                HQ[(istart+ii)*NI+qi,(jstart+ij)*NI+qj] = HQsign*multiplier*minusC2_LSJ[i,j]
     
     
+    # Testing. Currently one triangle matches, but not the other triangle.
+    Ix,Iy,Iz = makeIxyz(I)
+    Hhf_term1_test = scipy.sparse.kron(ion.FreeIonMatrix["Lx"],Ix) + scipy.sparse.kron(ion.FreeIonMatrix["Ly"],Iy) +scipy.sparse.kron(ion.FreeIonMatrix["Lz"],Iz)
+    
+    
+    print("should be zero or close",np.max(np.abs(Hhf_term1_test.todense())-np.abs(Hhf_term1.todense())))
+    print("should be zero or close",np.max(np.abs((Hhf_term1_test-Hhf_term1).todense())))
+    
+    # # Missing some pieces at the moment.
+    # for i in range(NI*ion.numstates()):
+        # for j in range(i):
+            # if np.abs(Hhf_term1[i,j] - np.conjugate(Hhf_term1[j,i])) > 1e-6:
+                # if np.abs(Hhf_term1[i,j]) < 1e-6:
+                    # Hhf_term1[i,j] = np.conjugate(Hhf_term1[j,i])
+                # elif np.abs(Hhf_term1[j,i]) < 1e-6:
+                    # Hhf_term1[j,i] = np.conjugate(Hhf_term1[i,j])
+                # else:
+                    # print('Hhf term 1 has nonhermitian terms at',i,j,Hhf_term1[i,j],Hhf_term1[j,i])
+            # if np.abs(Hhf_term2[i,j] - np.conjugate(Hhf_term2[j,i])) > 1e-6:
+                # if np.abs(Hhf_term2[i,j]) < 1e-6:
+                    # Hhf_term2[i,j] = np.conjugate(Hhf_term2[j,i])
+                # elif np.abs(Hhf_term2[j,i]) < 1e-6:
+                    # Hhf_term2[j,i] = np.conjugate(Hhf_term2[i,j])
+                # else:
+                    # print('Hhf term 2 has nonhermitian terms at',i,j,Hhf_term2[i,j],Hhf_term2[j,i])
+            # if np.abs(HQ[i,j] - np.conjugate(HQ[j,i])) > 1e-6:
+                # if np.abs(HQ[i,j]) < 1e-6:
+                    # HQ[i,j] = np.conjugate(HQ[j,i])
+                # elif np.abs(HQ[j,i]) < 1e-6:
+                    # HQ[j,i] = np.conjugate(HQ[i,j])
+                # else:
+                    # print('HQ has nonhermitian terms at',i,j,HQ[i,j],HQ[j,i])
+    
+    Hhf = Hhf_term1+Hhf_term2
+    
+    if testing:
+        testing_outputs = {}
+        testing_outputs['Hhf_term1'] = Hhf_term1
+        testing_outputs['Hhf_term2'] = Hhf_term2
+        testing_outputs['Hhf_term1_test'] = Hhf_term1_test
+        testing_outputs['Hhf_term1_LSJ'] = term1_LSJ
+        testing_outputs['Hhf_term2_LSJ'] = term2_LSJ
+        return Hhf,HQ,testing_outputs
     return Hhf,HQ
     
-# Expand matrix in MI basis to alpha LSJ mJ mI basis
+# Expand matrix in mI basis to alpha LSJ mJ mI basis
 def expand_I_to_full(Imatrix,N):
-    eyenoHF = identitymatrix(N,dtype='double')
-    return scipy.sparse.kron(eyenoHF,Imatrix)
+    # If it's sparse, keep it sparse
+    if hasattr(Imatrix,"toarray"):
+        eyenoHF = identitymatrix(N,dtype='double')
+        return scipy.sparse.kron(eyenoHF,Imatrix)
+    eyenoHF = np.eye(N)
+    return np.kron(eyenoHF,Imatrix)
 
 # Expand matrix in alpha LSJ mJ basis to alpha LSJ mJ mI basis
 def expand_to_hyperfine(matrix,I):
     twiceI = int(round(2*I))
     NI = twiceI+1
-    eyeHF = identitymatrix(NI,dtype='double')
-    return scipy.sparse.kron(matrix,eyeHF)
+    # If it's sparse, keep it sparse
+    if hasattr(matrix,"toarray"):
+        eyeHF = identitymatrix(NI,dtype='double')
+        return scipy.sparse.kron(matrix,eyeHF)
+    eyeHF = np.eye(NI)
+    return np.kron(matrix,eyeHF)
 
 def read_crosswhite(nf):
     """
