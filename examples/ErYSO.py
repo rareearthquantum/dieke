@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import dieke
 
+plt.ion()
 
 # Calculates the energy levels of Er:YSO
 nf = 11  # 11 f-electrons means we're dealing with Er
@@ -46,8 +47,8 @@ cfparams['B63'] = -97.9+139.7j
 cfparams['B64'] = -93.7-145.0j
 cfparams['B65'] = 13.9+109.5j
 cfparams['B66'] = 3.0-108.6j
-cfparams['A'] = 0.005466 #this is ignored
-cfparams['Q'] = 0.0716 #this is ignored
+cfparams['A'] = 0.005466
+cfparams['Q'] = 0.0716
 
 
 
@@ -101,18 +102,20 @@ I = 7/2
 
 # Projection operator for 4I15/2 and 4I13/2, in alpha SLJ mJ basis
 proj = evects[:,:30]
+def project_to_states(matrix,proj):
+    return np.conjugate(np.transpose(proj)) @ matrix @ proj
 
 # Projection operator for 4I15/2 and 4I13/2, in alpha SLJ mJ mI basis
 proj_hf = dieke.expand_to_hyperfine(proj,I)
 
 # Non hyperfine hamiltonian, projected to 4I15/2 and 4I13/2, expanded to hyperfine states
-Hproj = np.conjugate(np.transpose(proj)) @ H @ proj
+Hproj = project_to_states(H,proj)
 Hproj = dieke.expand_to_hyperfine(Hproj,I)
 
 # Hyperfine hamiltonians, projected to 4I15/2 and 4I13/2
 Hhf,HQ,tests = dieke.makeHyperfine(Er,I,testing=True)
-Hhfproj = np.conjugate(np.transpose(proj_hf)) @ Hhf @ proj_hf
-HQproj = np.conjugate(np.transpose(proj_hf)) @ HQ @ proj_hf
+Hhfproj = project_to_states(Hhf,proj_hf)
+HQproj = project_to_states(HQ,proj_hf)
 
 Hproj += cfparams['A']*Hhfproj + cfparams['Q']*HQproj
 
@@ -128,3 +131,38 @@ for k in range(len(seb_Z1_levels)):
         calc_Z1_levels[k],
         seb_Z1_levels[k],
         calc_Z1_levels[k] - seb_Z1_levels[k]))
+        
+muB_over_h = 0.46686 # Bohr magneton in wavenumbers per tesla
+GHz_per_wavenumber = 29.9792458
+
+# Field along D2 axis. I think its D1,D2,b coordinate system
+H_Z = project_to_states(muB_over_h*(Er.FreeIonMatrix["Ly"]+2*Er.FreeIonMatrix["Sy"]),proj)
+H_Z = dieke.expand_to_hyperfine(H_Z,I)
+
+Bs = np.linspace(-6e-3,6e-3,101)
+
+Z1_transitions = np.zeros((16*15//2,len(Bs)))
+Y1_transitions = np.zeros((16*15//2,len(Bs)))
+
+H_full = Hproj.copy()
+
+for B_idx,B in enumerate(Bs):
+    H_full = Hproj + B*H_Z
+    field_evals = np.linalg.eigvalsh(H_full)
+    num = 0
+    for i in range(16-1):
+        for j in range(i+1,16):
+            Z1_transitions[num,B_idx] = field_evals[j] - field_evals[i]
+            num += 1
+    num = 0
+    for i in range(16*8,16*8+16-1):
+        for j in range(i+1,16*8+16):
+            Y1_transitions[num,B_idx] = field_evals[j] - field_evals[i]
+            num += 1
+
+plt.figure(1,clear=True)
+plt.plot(1e3*Bs,np.transpose(GHz_per_wavenumber*Z1_transitions),color='blue')
+plt.plot(1e3*Bs,np.transpose(GHz_per_wavenumber*Y1_transitions),color='orange')
+plt.xlabel("Field strength (mT)")
+plt.ylabel("Frequency (GHz)")
+plt.ylim(0.5,1.3)
